@@ -1,18 +1,31 @@
 {
-    "model": "llama2",
-    "models": [
-        "llama2",
-        "mistral",
-        "codellama"
-    ],
+    "provider": "ollama",
+    "ollama": {
+        "model": "llama2",
+        "models": [
+            "llama2",
+            "mistral",
+            "codellama"
+        ]
+    },
+    "azure_openai": {
+        "models": [
+            "gpt-4",
+            "gpt-35-turbo"
+        ]
+    },
     "system_prompt": {
         "id": "sp-4f8c2e",
         "version": "0.1.0",
         "purpose": "To assist users in refining system prompts for AI assistants.",
-        "owner": "MCQ1",
-        "date_created": "2025-10-28",
+        "owner": "Gemini",
+        "date_created": "2025-10-23",
         "intended_model": "llama2",
-        "tags": ["prompt-engineering", "ai-assistant", "refinement"],
+        "tags": [
+            "prompt-engineering",
+            "ai-assistant",
+            "refinement"
+        ],
         "notes": "This is the initial version of the system prompt.",
         "content": "You are a prompt engineering assistant. Your task is to take a user's system prompt and rewrite it to be a more effective and well-structured prompt for an AI assistant. Provide only the refined prompt in your response."
     }
