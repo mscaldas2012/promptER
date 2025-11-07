@@ -1,57 +1,26 @@
-
 import streamlit as st
-import json
-import time
-import os
-from dotenv import load_dotenv
-from logging_config import llm_logger
-from llm_factory import LLMProviderFactory
+from main_page import main_page
+from chat_page import chat_page
 
-# Load environment variables from .env file
-load_dotenv()
+PAGES = {
+    "Prompt Refiner": main_page,
+    "Playground": chat_page
+}
 
-# Load configuration
-with open('''config.json''') as config_file:
-    config = json.load(config_file)
+st.sidebar.title('Navigation')
 
-st.title("AI Prompt Builder")
+# Initialize session state for the page
+if 'page' not in st.session_state:
+    st.session_state.page = "Prompt Refiner"
 
-st.write("Enter your initial system prompt below, and the AI will help you refine it.")
+# Function to set the page
+def set_page(page_name):
+    st.session_state.page = page_name
 
-# Provider selection
-provider_name = st.radio("Select a provider", ["ollama", "azure_openai"], index=["ollama", "azure_openai"].index(config['''provider''']))
+# Create buttons for each page
+for page_name in PAGES.keys():
+    st.sidebar.button(page_name, on_click=set_page, args=(page_name,))
 
-# Model selection
-if provider_name == "ollama":
-    models = config['''ollama''']['''models''']
-else:
-    models = config['''azure_openai''']['''models''']
-selected_model = st.selectbox("Select a model", models)
-
-user_prompt = st.text_area("Your System Prompt", height=150)
-
-if st.button("Refine Prompt"):
-    if not user_prompt:
-        st.warning("Please enter a prompt to get a refined version.")
-    else:
-        with st.spinner("Refining prompt..."):
-            try:
-                factory = LLMProviderFactory()
-                llm_provider = factory.get_provider(provider_name)
-
-                log_extra = {
-                    "prompt_id": config['''system_prompt''']['''id'''],
-                    "prompt_version": config['''system_prompt''']['''version'''],
-                }
-
-                refined_prompt = llm_provider.get_refined_prompt(
-                    user_prompt,
-                    selected_model,
-                    config['''system_prompt''']['''content'''],
-                    llm_logger,
-                    log_extra
-                )
-                st.subheader("Refined Prompt")
-                st.markdown(f"'''\n{refined_prompt}\n'''")
-            except Exception as e:
-                st.error(f"An error occurred: {e}")
+# Get the page from session state and call it
+page = PAGES[st.session_state.page]
+page()

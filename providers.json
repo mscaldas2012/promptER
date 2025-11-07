@@ -1,0 +1,17 @@
+{
+    "provider": "azure_openai",
+    "ollama": {
+        "model": "llama2",
+        "models": [
+            "llama2",
+            "mistral",
+            "codellama"
+        ]
+    },
+    "azure_openai": {
+        "models": [
+            "gpt-4o",
+            "gpt-35-turbo"
+        ]
+    }
+}

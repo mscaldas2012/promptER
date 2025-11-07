@@ -5,25 +5,22 @@ import time
 import os
 
 class LLMProvider:
-    def get_refined_prompt(self, initial_prompt, model, system_prompt_content, llm_logger, log_extra):
+    def get_llm_response(self, user_prompt, model, roles, llm_logger, log_extra):
         raise NotImplementedError
 
 class OllamaProvider(LLMProvider):
-    def get_refined_prompt(self, initial_prompt, model, system_prompt_content, llm_logger, log_extra):
+    def get_llm_response(self, user_prompt, model, roles, llm_logger, log_extra):
         start_time = time.time()
         try:
+            messages = []
+            for role, content in roles.items():
+                if content:
+                    messages.append({'role': role, 'content': content})
+            messages.append({'role': 'user', 'content': user_prompt})
+
             response = ollama.chat(
                 model=model,
-                messages=[
-                    {
-                        '''role''': '''system''',
-                        '''content''': system_prompt_content,
-                    },
-                    {
-                        '''role''': '''user''',
-                        '''content''': initial_prompt,
-                    },
-                ],
+                messages=messages,
             )
             latency = time.time() - start_time
             llm_logger.info(
@@ -32,12 +29,15 @@ class OllamaProvider(LLMProvider):
                     **log_extra,
                     "provider": "ollama",
                     "model_used": model,
-                    "tokens_used": response.get('''eval_count'''),
+                    "input_tokens": response.get('prompt_eval_count'),
+                    "output_tokens": response.get('eval_count'),
                     "latency": latency,
                     "outcome": "success",
+                    "input_text": user_prompt,
+                    "output_text": response['message']['content'],
                 },
             )
-            return response['''message''']['''content''']
+            return response['message']['content']
         except Exception as e:
             latency = time.time() - start_time
             llm_logger.error(
@@ -57,19 +57,22 @@ class AzureOpenAIProvider(LLMProvider):
     def __init__(self):
         self.client = openai.AzureOpenAI(
             api_key=os.getenv("AZURE_OPENAI_API_KEY"),
-            api_version="2023-12-01-preview",
-            azure_endpoint=os.getenv("AZURE_OPENAI_ENDPOINT"),
+            api_version=os.getenv("AZURE_OPENAI_API_VERSION"),
+            azure_endpoint=os.getenv("AZURE_OPENAI_ENDPOINT")
         )
 
-    def get_refined_prompt(self, initial_prompt, model, system_prompt_content, llm_logger, log_extra):
+    def get_llm_response(self, user_prompt, model, roles, llm_logger, log_extra):
         start_time = time.time()
         try:
+            messages = []
+            for role, content in roles.items():
+                if content:
+                    messages.append({'role': role, 'content': content})
+            messages.append({'role': 'user', 'content': user_prompt})
+
             response = self.client.chat.completions.create(
-                model=os.getenv("AZURE_OPENAI_DEPLOYMENT_NAME"),
-                messages=[
-                    {"role": "system", "content": system_prompt_content},
-                    {"role": "user", "content": initial_prompt},
-                ],
+                model=model,
+                messages=messages,
             )
             latency = time.time() - start_time
             llm_logger.info(
@@ -78,9 +81,12 @@ class AzureOpenAIProvider(LLMProvider):
                     **log_extra,
                     "provider": "azure_openai",
                     "model_used": model,
-                    "tokens_used": response.usage.total_tokens,
+                    "input_tokens": response.usage.prompt_tokens,
+                    "output_tokens": response.usage.completion_tokens,
                     "latency": latency,
                     "outcome": "success",
+                    "input_text": user_prompt,
+                    "output_text": response.choices[0].message.content,
                 },
             )
             return response.choices[0].message.content

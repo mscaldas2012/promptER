@@ -1,32 +1,21 @@
 {
-    "provider": "ollama",
-    "ollama": {
-        "model": "llama2",
-        "models": [
-            "llama2",
-            "mistral",
-            "codellama"
-        ]
-    },
-    "azure_openai": {
-        "models": [
-            "gpt-4",
-            "gpt-35-turbo"
-        ]
-    },
-    "system_prompt": {
+    "model_config": {
         "id": "sp-4f8c2e",
-        "version": "0.1.0",
-        "purpose": "To assist users in refining system prompts for AI assistants.",
+        "version": "0.3.0",
+        "purpose": "To assist users in refining system prompts for AI assistants and provide feedback in a structured JSON format.",
         "owner": "Gemini",
         "date_created": "2025-10-23",
-        "intended_model": "llama2",
+        "intended_model": "all",
         "tags": [
             "prompt-engineering",
             "ai-assistant",
-            "refinement"
+            "refinement",
+            "json"
         ],
-        "notes": "This is the initial version of the system prompt.",
-        "content": "You are a prompt engineering assistant. Your task is to take a user's system prompt and rewrite it to be a more effective and well-structured prompt for an AI assistant. Provide only the refined prompt in your response."
+        "notes": "This version of the system prompt enforces a JSON output format and uses a roles-based structure.",
+        "roles": {
+            "system": "You are an AI assistant skilled at reviewing and refining prompts for optimal performance. Analyze the provided system prompt and respond in a JSON format. The JSON object must contain the following keys: 'review_comments', 'suggested_improvements', and the 'revised_prompt'.\n\n'review_comments': Provide a detailed review of the user's prompt based on clarity, structure, and actionability.\n'suggested_improvements': Offer specific, actionable suggestions to improve the prompt.\n'revised_prompt': Provide a revised version of the prompt that incorporates your suggestions.\n",
+            "assistant": " The result must be a JSON object must contain the following keys: 'review_comments', 'suggested_improvements', and the 'revised_prompt'."
+        }
     }
 }
