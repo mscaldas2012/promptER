@@ -1,12 +1,16 @@
 
 import streamlit as st
 import json
+import yaml
 from dotenv import load_dotenv
 from llm_factory import LLMProviderFactory
 from logging_config import llm_logger
 
 # Load environment variables from .env file
 load_dotenv()
+
+PROMPT_USE_CASE = "system_prompt_generator"
+PROMPT_MODEL_NAME = "default"
 
 def main_page():
     st.title("AI Prompt Builder")
@@ -16,8 +20,18 @@ def main_page():
     # Load configurations
     with open('providers.json') as providers_file:
         providers_config = json.load(providers_file)
-    with open('config.json') as config_file:
-        model_config = json.load(config_file)['model_config']
+    with open('config.yaml') as config_file:
+        config_data = yaml.safe_load(config_file)
+
+    prompt_config = config_data.get('prompts', {}).get(PROMPT_USE_CASE)
+    if not prompt_config:
+        st.error(f"Prompt configuration '{PROMPT_USE_CASE}' not found in config.yaml.")
+        st.stop()
+
+    prompt_model_config = prompt_config.get('models', {}).get(PROMPT_MODEL_NAME)
+    if not prompt_model_config:
+        st.error(f"Model configuration '{PROMPT_MODEL_NAME}' not found for prompt '{PROMPT_USE_CASE}'.")
+        st.stop()
 
     # Provider selection
     provider_name = st.radio("Select a provider", ["ollama", "azure_openai"], index=["ollama", "azure_openai"].index(providers_config['provider']))
@@ -47,14 +61,14 @@ def main_page():
                     llm_provider = factory.get_provider(provider_name)
 
                     log_extra = {
-                        "prompt_id": model_config['id'],
-                        "prompt_version": model_config['version'],
+                        "prompt_id": prompt_config.get('id', PROMPT_USE_CASE),
+                        "prompt_version": prompt_config.get('version', 'unknown'),
                     }
 
                     llm_response_str = llm_provider.get_llm_response(
                         st.session_state.refiner_user_prompt,
                         selected_model,
-                        model_config['roles'],
+                        prompt_model_config.get('prompt_roles', {}),
                         llm_logger,
                         log_extra
                     )

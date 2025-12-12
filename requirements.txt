@@ -3,3 +3,4 @@ ollama
 json-log-formatter
 openai
 python-dotenv
+pyyaml

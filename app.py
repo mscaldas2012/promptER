@@ -1,10 +1,12 @@
 import streamlit as st
 from main_page import main_page
 from chat_page import chat_page
+from evaluation_page import evaluation_page
 
 PAGES = {
     "Prompt Refiner": main_page,
-    "Playground": chat_page
+    "Playground": chat_page,
+    "Evaluation": evaluation_page
 }
 
 st.sidebar.title('Navigation')
