@@ -3,4 +3,8 @@ ollama
 json-log-formatter
 openai
 python-dotenv
-pyyaml
+opentelemetry-api==1.28.2
+opentelemetry-sdk==1.28.2
+azure-monitor-opentelemetry-exporter
+opentelemetry-instrumentation-openai
+azure-ai-inference
