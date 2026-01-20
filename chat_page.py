@@ -30,8 +30,14 @@ def chat_page():
         st.session_state.system_prompt = ""
 
     if 'chat_system_prompt_prefill' in st.session_state and st.session_state.chat_system_prompt_prefill:
-        st.session_state.system_prompt = st.session_state.chat_system_prompt_prefill
+        prefill_value = st.session_state.chat_system_prompt_prefill
+        if not isinstance(prefill_value, str):
+            prefill_value = json.dumps(prefill_value, indent=2)
+        st.session_state.system_prompt = prefill_value
         st.session_state.chat_system_prompt_prefill = ""
+
+    if not isinstance(st.session_state.system_prompt, str):
+        st.session_state.system_prompt = json.dumps(st.session_state.system_prompt, indent=2)
 
     system_prompt = st.text_area("Enter your System Prompt here", key="system_prompt", height=150)
 
