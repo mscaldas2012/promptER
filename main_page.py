@@ -7,7 +7,7 @@ from llm_factory import LLMProviderFactory
 from logging_config import llm_logger
 
 # Load environment variables from .env file
-load_dotenv()
+load_dotenv(".env.edav")
 
 PROMPT_USE_CASE = "system_prompt_generator"
 PROMPT_MODEL_NAME = "default"
@@ -66,13 +66,15 @@ def main_page():
     framework_options = load_framework_options()
 
     # Provider selection
-    provider_name = st.radio("Select a provider", ["ollama", "azure_openai"], index=["ollama", "azure_openai"].index(providers_config['provider']))
-
-    # Model selection
-    if provider_name == "ollama":
-        models = providers_config['ollama']['models']
-    else:
-        models = providers_config['azure_openai']['models']
+    provider_name = st.radio("Select a provider", ["ollama", "azure_openai", "edav_openai"], index=["ollama", "azure_openai", "edav_openai"].index(providers_config['provider']))
+    models = providers_config[provider_name]['models']
+    # # Model selection
+    # if provider_name == "ollama":
+    #     models = providers_config['ollama']['models']
+    # elif provider_name == "edav_openai":
+    #     models = providers_config['edav_openai']['models']
+    # else:
+    #     models = providers_config['azure_openai']['models']
     selected_model = st.selectbox("Select a model", models)
 
     if 'refiner_user_prompt' not in st.session_state:
