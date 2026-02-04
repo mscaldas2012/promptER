@@ -7,31 +7,31 @@
   },
   {
     "key": "RTF",
-    "label": "RTF (4/5) - Classic system prompt shape",
+    "label": "RTF Classic system prompt shape",
     "description": "Classic system prompt shape.",
     "instructions": "Structure the revised prompt using RTF: Role, Task, Format. Clearly define the assistant role, the task to perform, and the required output format."
   },
   {
     "key": "PECRA",
-    "label": "PECRA (4/5) - Comprehensive behavior definition",
+    "label": "PECRA Comprehensive behavior definition",
     "description": "Comprehensive behavior definition.",
     "instructions": "Structure the revised prompt using PECRA: Purpose, Expertise, Context, Rules, Action. Include each section explicitly."
   },
   {
     "key": "OSCAR",
-    "label": "OSCAR (4/5) - Excellent for constraints and guardrails",
+    "label": "OSCAR Excellent for constraints and guardrails",
     "description": "Excellent for constraints and guardrails.",
     "instructions": "Structure the revised prompt using OSCAR: Objective, Style, Constraints, Audience, Response. Emphasize constraints and guardrails."
   },
   {
     "key": "CRISP",
-    "label": "CRISP (3/5) - Great for meta prompt refinement",
+    "label": "CRISP Great for meta prompt refinement",
     "description": "Great for meta prompt refinement.",
     "instructions": "Structure the revised prompt using CRISP: Context, Role, Intent, Style, Parameters. Include each section explicitly and keep them concise."
   },
   {
     "key": "TAG",
-    "label": "TAG (2/5) - Lightweight high-level rules",
+    "label": "TAG Lightweight high-level rules",
     "description": "Lightweight high-level rules.",
     "instructions": "Structure the revised prompt using TAG: Task, Audience, Goals. Keep it short and high-level."
   },

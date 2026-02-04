@@ -6,7 +6,7 @@ from llm_factory import LLMProviderFactory
 from logging_config import llm_logger
 
 # Load environment variables from .env file
-load_dotenv(".env.edav")
+load_dotenv(".env")
 
 PROMPT_USE_CASE = "llm_evaluation"
 PROMPT_MODEL_NAME = "default"

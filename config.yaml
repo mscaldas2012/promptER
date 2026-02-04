@@ -3,7 +3,7 @@ prompts:
     id: sp-4f8c2e
     version: 0.3.0
     purpose: To assist users in refining system prompts for AI assistants and provide feedback in a structured JSON format.
-    owner: Gemini
+    owner: mcq1
     date_created: "2025-10-23"
     tags:
       - prompt-engineering
