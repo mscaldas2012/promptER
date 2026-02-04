@@ -1,12 +1,8 @@
 import json
 import yaml
 import streamlit as st
-from dotenv import load_dotenv
 from llm_factory import LLMProviderFactory
 from logging_config import llm_logger
-
-# Load environment variables from .env file
-load_dotenv(".env")
 
 PROMPT_USE_CASE = "llm_evaluation"
 PROMPT_MODEL_NAME = "default"
@@ -34,13 +30,15 @@ def evaluation_page():
     # Provider selection
     provider_name = st.radio(
         "Select a provider",
-        ["ollama", "azure_openai"],
-        index=["ollama", "azure_openai"].index(providers_config.get('provider', 'ollama'))
+        ["ollama", "azure_openai", "edav_openai"],
+        index=["ollama", "azure_openai", "edav_openai"].index(providers_config.get('provider', 'ollama'))
     )
 
     # Model selection
     if provider_name == "ollama":
         models = providers_config.get('ollama', {}).get('models', [])
+    elif provider_name == "edav_openai":
+        models = providers_config.get('edav_openai', {}).get('models', [])
     else:
         models = providers_config.get('azure_openai', {}).get('models', [])
     selected_model = st.selectbox("Select a model", models)

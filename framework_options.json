@@ -3,42 +3,42 @@
     "key": "free_form",
     "label": "Free Form / No Specific Framework",
     "description": "No specific framework; use best-practice prompt shaping.",
-    "instructions": "Use best-practice prompt shaping without a named framework. Be clear, specific, and actionable."
+    "instructions": "Use best-practice prompt shaping without a named framework. Be clear, specific, and actionable. Define role, task, constraints, and output format when relevant."
   },
   {
     "key": "RTF",
     "label": "RTF Classic system prompt shape",
     "description": "Classic system prompt shape.",
-    "instructions": "Structure the revised prompt using RTF: Role, Task, Format. Clearly define the assistant role, the task to perform, and the required output format."
+    "instructions": "Structure the revised prompt using RTF: Role, Task, Format. Use explicit section headers. Role states persona and expertise, Task states what to do, Format states output structure."
   },
   {
     "key": "PECRA",
     "label": "PECRA Comprehensive behavior definition",
     "description": "Comprehensive behavior definition.",
-    "instructions": "Structure the revised prompt using PECRA: Purpose, Expertise, Context, Rules, Action. Include each section explicitly."
+    "instructions": "Structure the revised prompt using PECRA: Purpose, Expertise, Context, Rules, Action. Use explicit section headers and keep each section concise but complete."
   },
   {
     "key": "OSCAR",
     "label": "OSCAR Excellent for constraints and guardrails",
     "description": "Excellent for constraints and guardrails.",
-    "instructions": "Structure the revised prompt using OSCAR: Objective, Style, Constraints, Audience, Response. Emphasize constraints and guardrails."
+    "instructions": "Structure the revised prompt using OSCAR: Objective, Style, Constraints, Audience, Response. Emphasize constraints, safety, and must-not rules."
   },
   {
     "key": "CRISP",
     "label": "CRISP Great for meta prompt refinement",
     "description": "Great for meta prompt refinement.",
-    "instructions": "Structure the revised prompt using CRISP: Context, Role, Intent, Style, Parameters. Include each section explicitly and keep them concise."
+    "instructions": "Structure the revised prompt using CRISP: Context, Role, Intent, Style, Parameters. Use explicit section headers and keep each section concise."
   },
   {
     "key": "TAG",
     "label": "TAG Lightweight high-level rules",
     "description": "Lightweight high-level rules.",
-    "instructions": "Structure the revised prompt using TAG: Task, Audience, Goals. Keep it short and high-level."
+    "instructions": "Structure the revised prompt using TAG: Task, Audience, Goals. Keep it short and high-level, and avoid extra sections."
   },
   {
     "key": "OTHER",
     "label": "OTHER (enter custom)",
     "description": "Enter a custom framework name or description.",
-    "instructions": "Research information about the framework entered and use that as the structure of the revised prompt using appropriate Tags."
+    "instructions": "Use the user-provided framework description to define a structure. If the framework is unclear, infer a simple sectioned structure and keep it concise."
   }
 ]

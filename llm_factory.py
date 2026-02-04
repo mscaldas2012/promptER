@@ -134,11 +134,11 @@ class OllamaProvider(LLMProvider):
 
 class EDAVOpenAIProvider(LLMProvider):
     def __init__(self):
-        TENANT_ID = os.getenv("TENANT_ID")
+        TENANT_ID = os.getenv("EDAV_TENANT_ID")
 
         # From the customer SP
-        CLIENT_ID = os.getenv("CLIENT_ID")
-        CLIENT_SECRET = os.getenv("CLIENT_SECRET")
+        CLIENT_ID = os.getenv("EDAV_CLIENT_ID")
+        CLIENT_SECRET = os.getenv("EDAV_CLIENT_SECRET")
 
         # Authenticate using Consumer Dev SP credentials
         credential = ClientSecretCredential(
@@ -148,19 +148,19 @@ class EDAVOpenAIProvider(LLMProvider):
         )
 
         # Retrieve the token using Provider SP as the scope
-        scope = os.getenv("SCOPE_TOKEN_AUDIENCE")
+        scope = os.getenv("EDAV_SCOPE_TOKEN_AUDIENCE")
         if not scope:
-            raise ValueError("SCOPE_TOKEN_AUDIENCE is missing; cannot request an access token.")
+            raise ValueError("EDAV_SCOPE_TOKEN_AUDIENCE is missing; cannot request an access token.")
 
         try:
             token = credential.get_token(scope).token
             print(f"Token with scope {scope} acquired successfully: {token[:25]}....")
 
-            MAAS_SUBSCRIPTION_KEY = os.getenv("SUBSCRIPTION_KEY")
+            MAAS_SUBSCRIPTION_KEY = os.getenv("EDAV_SUBSCRIPTION_KEY")
 
             self.client = AzureOpenAI(
-                api_version=os.getenv("AZURE_OPENAI_API_VERSION"),
-                azure_endpoint=os.getenv("AZURE_ENDPOINT"),
+                api_version=os.getenv("EDAV_AZURE_OPENAI_API_VERSION"),
+                azure_endpoint=os.getenv("EDAV_AZURE_OPENAI_ENDPOINT"),
                 azure_ad_token=token,
                 default_headers={"Ocp-Apim-Subscription-Key": MAAS_SUBSCRIPTION_KEY},
             )

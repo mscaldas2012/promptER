@@ -2,12 +2,8 @@
 import streamlit as st
 import json
 import yaml
-from dotenv import load_dotenv
 from llm_factory import LLMProviderFactory
 from logging_config import llm_logger
-
-# Load environment variables from .env file
-load_dotenv(".env.edav")
 
 PROMPT_USE_CASE = "system_prompt_generator"
 PROMPT_MODEL_NAME = "default"
@@ -39,6 +35,19 @@ def apply_framework_template(prompt_roles, replacements):
             updated_roles[role] = updated_content
         else:
             updated_roles[role] = content
+    return updated_roles
+
+
+def inject_framework_instructions(prompt_roles, framework_instructions):
+    if not framework_instructions:
+        return prompt_roles
+
+    updated_roles = dict(prompt_roles)
+    system_prompt = updated_roles.get("system")
+    if isinstance(system_prompt, str):
+        updated_roles["system"] = (
+            f"{system_prompt}\n\nFramework instructions:\n{framework_instructions}"
+        )
     return updated_roles
 
 
@@ -131,6 +140,10 @@ def main_page():
                         "{{framework_key}}": framework_key,
                     }
                     prompt_roles_with_framework = apply_framework_template(prompt_roles, replacements)
+                    prompt_roles_with_framework = inject_framework_instructions(
+                        prompt_roles_with_framework,
+                        framework_instructions
+                    )
 
                     llm_response_str = llm_provider.get_llm_response(
                         st.session_state.refiner_user_prompt,

@@ -23,7 +23,7 @@ prompts:
             'suggested_improvements': Offer specific, actionable suggestions to improve the prompt.
             'revised_prompt': Provide a revised version of the prompt that incorporates your suggestions.
             
-            Framework guidance: The user selected the '{{framework}}' prompt framework. Align review and revised_prompt output to that framework's structure and constraints when possible. If the framework is 'Free Form / No Specific Framework', use best-practice prompt shaping without a named framework.
+            Framework guidance: The user selected the '{{framework}}' prompt framework. {{framework_instructions}} Align review and revised_prompt output to that framework's structure and constraints when possible. If the framework is 'Free Form / No Specific Framework', use best-practice prompt shaping without a named framework.
           assistant: |-
             The result must be a JSON object must contain the following keys: 'review_comments', 'suggested_improvements', and the 'revised_prompt'.
         model_params:

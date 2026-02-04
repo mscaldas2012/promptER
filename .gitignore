@@ -210,7 +210,7 @@ venv/
 ENV/
 env.bak/
 venv.bak/
-.env.edav
+.venv/
 # Spyder project settings
 .spyderproject
 .spyproject
