@@ -8,6 +8,7 @@ from openai import api_version, AzureOpenAI
 from opentelemetry import trace, metrics
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.metrics import MeterProvider
+from langfuse import Langfuse
 
 # Initialize OpenTelemetry
 trace.set_tracer_provider(TracerProvider())
@@ -33,6 +34,9 @@ llm_tokens_counter = meter.create_counter(
 
 
 class LLMProvider:
+    def __init__(self, langfuse_client):
+        self.langfuse = langfuse_client
+
     def get_llm_response(self, user_prompt, model, roles, llm_logger, log_extra):
         raise NotImplementedError
 
@@ -52,6 +56,13 @@ class OllamaProvider(LLMProvider):
                         messages.append({'role': role, 'content': content})
                 messages.append({'role': 'user', 'content': user_prompt})
 
+                generation = self.langfuse.start_generation(
+                    name="ollama-generation",
+                    input=messages,
+                    model=model,
+                    metadata=log_extra
+                )
+
                 response = ollama.chat(
                     model=model,
                     messages=messages,
@@ -61,6 +72,11 @@ class OllamaProvider(LLMProvider):
 
                 input_tokens = response.get('prompt_eval_count', 0)
                 output_tokens = response.get('eval_count', 0)
+
+                generation.update(
+                    output=response['message']['content'],
+                    usage={"prompt_tokens": input_tokens, "completion_tokens": output_tokens}
+                )
 
                 # Set span attributes
                 span.set_attribute("llm.input_tokens", input_tokens)
@@ -116,7 +132,8 @@ class OllamaProvider(LLMProvider):
 
 
 class EDAVOpenAIProvider(LLMProvider):
-    def __init__(self):
+    def __init__(self, langfuse_client):
+        super().__init__(langfuse_client)
         TENANT_ID = os.getenv("EDAV_TENANT_ID")
 
         # From the customer SP
@@ -166,6 +183,13 @@ class EDAVOpenAIProvider(LLMProvider):
                         messages.append({'role': role, 'content': content})
                 messages.append({'role': 'user', 'content': user_prompt})
 
+                generation = self.langfuse.start_generation(
+                    name="edav-openai-generation",
+                    input=messages,
+                    model=model,
+                    metadata=log_extra
+                )
+
                 response = self.client.chat.completions.create(
                     model=model,
                     messages=messages,
@@ -176,6 +200,11 @@ class EDAVOpenAIProvider(LLMProvider):
                 input_tokens = response.usage.prompt_tokens
                 output_tokens = response.usage.completion_tokens
                 response_text = response.choices[0].message.content
+
+                generation.update(
+                    output=response_text,
+                    usage={"prompt_tokens": input_tokens, "completion_tokens": output_tokens}
+                )
 
                 # Set span attributes
                 span.set_attribute("llm.input_tokens", input_tokens)
@@ -232,7 +261,8 @@ class EDAVOpenAIProvider(LLMProvider):
 
 
 class AzureOpenAIProvider(LLMProvider):
-    def __init__(self):
+    def __init__(self, langfuse_client):
+        super().__init__(langfuse_client)
         endpoint = os.getenv("AZURE_OPENAI_ENDPOINT")
         api_key = os.getenv("AZURE_OPENAI_API_KEY")
 
@@ -257,6 +287,13 @@ class AzureOpenAIProvider(LLMProvider):
                         messages.append({'role': role, 'content': content})
                 messages.append({'role': 'user', 'content': user_prompt})
 
+                generation = self.langfuse.start_generation(
+                    name="azure-openai-generation",
+                    input=messages,
+                    model=model,
+                    metadata=log_extra
+                )
+
                 response = self.client.complete(
                     model=model,
                     messages=messages,
@@ -267,6 +304,11 @@ class AzureOpenAIProvider(LLMProvider):
                 input_tokens = response.usage.prompt_tokens
                 output_tokens = response.usage.completion_tokens
                 response_text = response.choices[0].message.content
+
+                generation.update(
+                    output=response_text,
+                    usage={"prompt_tokens": input_tokens, "completion_tokens": output_tokens}
+                )
 
                 # Set span attributes
                 span.set_attribute("llm.input_tokens", input_tokens)
@@ -323,12 +365,15 @@ class AzureOpenAIProvider(LLMProvider):
 
 
 class LLMProviderFactory:
+    def __init__(self):
+        self.langfuse = Langfuse()
+
     def get_provider(self, provider_name):
         if provider_name == "ollama":
-            return OllamaProvider()
+            return OllamaProvider(self.langfuse)
         elif provider_name == "azure_openai":
-            return AzureOpenAIProvider()
+            return AzureOpenAIProvider(self.langfuse)
         elif provider_name == "edav_openai":
-            return EDAVOpenAIProvider()
+            return EDAVOpenAIProvider(self.langfuse)
         else:
             raise ValueError(f"Unknown provider: {provider_name}")
