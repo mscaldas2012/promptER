@@ -1,7 +1,11 @@
 import streamlit as st
+from dotenv import load_dotenv
 from main_page import main_page
 from chat_page import chat_page
 from evaluation_page import evaluation_page
+
+# Load environment variables once for all pages
+load_dotenv(".env")
 
 PAGES = {
     "Prompt Refiner": main_page,

@@ -1,12 +1,8 @@
 
 import streamlit as st
 import json
-from dotenv import load_dotenv
 from llm_factory import LLMProviderFactory
 from logging_config import llm_logger
-
-# Load environment variables from .env file
-load_dotenv()
 
 def chat_page():
     st.title("Playground")
@@ -17,11 +13,17 @@ def chat_page():
         providers_config = json.load(providers_file)
 
     # Provider selection
-    provider_name = st.radio("Select a provider", ["ollama", "azure_openai"], index=["ollama", "azure_openai"].index(providers_config.get('provider', 'ollama')))
+    provider_name = st.radio(
+        "Select a provider",
+        ["ollama", "azure_openai", "edav_openai"],
+        index=["ollama", "azure_openai", "edav_openai"].index(providers_config.get('provider', 'ollama'))
+    )
 
     # Model selection
     if provider_name == "ollama":
         models = providers_config.get('ollama', {}).get('models', [])
+    elif provider_name == "edav_openai":
+        models = providers_config.get('edav_openai', {}).get('models', [])
     else:
         models = providers_config.get('azure_openai', {}).get('models', [])
     selected_model = st.selectbox("Select a model", models)
@@ -30,8 +32,14 @@ def chat_page():
         st.session_state.system_prompt = ""
 
     if 'chat_system_prompt_prefill' in st.session_state and st.session_state.chat_system_prompt_prefill:
-        st.session_state.system_prompt = st.session_state.chat_system_prompt_prefill
+        prefill_value = st.session_state.chat_system_prompt_prefill
+        if not isinstance(prefill_value, str):
+            prefill_value = json.dumps(prefill_value, indent=2)
+        st.session_state.system_prompt = prefill_value
         st.session_state.chat_system_prompt_prefill = ""
+
+    if not isinstance(st.session_state.system_prompt, str):
+        st.session_state.system_prompt = json.dumps(st.session_state.system_prompt, indent=2)
 
     system_prompt = st.text_area("Enter your System Prompt here", key="system_prompt", height=150)
 

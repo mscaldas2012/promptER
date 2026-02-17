@@ -10,8 +10,14 @@
     },
     "azure_openai": {
         "models": [
-            "gpt-4o",
-            "gpt-35-turbo"
+            "gpt-4o"
+            ,"gpt-4o-mini"
+
+        ]
+    },
+    "edav_openai": {
+        "models": [
+            "gpt4.1-mini-dgw-default"
         ]
     }
 }
