@@ -8,28 +8,11 @@ from openai import api_version, AzureOpenAI
 from opentelemetry import trace, metrics
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.metrics import MeterProvider
-from opentelemetry.sdk.trace.export import BatchSpanProcessor
-from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
-from azure.monitor.opentelemetry.exporter import (
-    AzureMonitorTraceExporter,
-    AzureMonitorMetricExporter
-)
 
 # Initialize OpenTelemetry
 trace.set_tracer_provider(TracerProvider())
+metrics.set_meter_provider(MeterProvider())
 tracer = trace.get_tracer(__name__)
-
-# Configure Azure Monitor exporters
-connection_string = os.getenv("APPLICATIONINSIGHTS_CONNECTION_STRING")
-if connection_string:
-    trace_exporter = AzureMonitorTraceExporter(connection_string=connection_string)
-    span_processor = BatchSpanProcessor(trace_exporter)
-    trace.get_tracer_provider().add_span_processor(span_processor)
-
-    metric_reader = PeriodicExportingMetricReader(
-        AzureMonitorMetricExporter(connection_string=connection_string)
-    )
-    metrics.set_meter_provider(MeterProvider(metric_readers=[metric_reader]))
 
 meter = metrics.get_meter(__name__)
 llm_call_counter = meter.create_counter(
@@ -349,4 +332,3 @@ class LLMProviderFactory:
             return EDAVOpenAIProvider()
         else:
             raise ValueError(f"Unknown provider: {provider_name}")
-

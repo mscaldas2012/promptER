@@ -9,6 +9,7 @@ This Streamlit application helps users refine their system prompts for AI assist
 *   **Model Selection:** Select from a list of available models for the chosen provider directly within the application.
 *   **Configurable System Prompt:** The core system prompt for the prompt builder itself is externalized in `config.yaml`, allowing for easy modification and versioning.
 *   **LLM Call Logging:** Every interaction with the LLM is logged in a structured JSON format (`llm_calls.log`), providing details such as timestamp, prompt ID, model used, tokens, latency, and outcome.
+*   **Telemetry:** OpenTelemetry spans/metrics are emitted for LLM calls; route them to Langfuse (or any OTEL exporter) as needed. Azure Application Insights exporters have been removed.
 *   **Secure Credential Management:** Azure OpenAI API keys and endpoints are loaded securely from a `.env` file, keeping sensitive information out of the codebase.
 
 ## Setup
@@ -148,4 +149,4 @@ All LLM calls are logged to `llm_calls.log` in JSON format. This file can be use
 
 ```json
 {"message": "LLM call successful", "prompt_id": "sp-4f8c2e", "prompt_version": "0.1.0", "model_used": "llama2", "tokens_used": 123, "latency": 0.543, "outcome": "success", "time": "2025-10-23T10:30:00.123456"}
-``````
+```
