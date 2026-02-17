@@ -127,9 +127,11 @@ def main_page():
                     llm_provider = factory.get_provider(provider_name)
 
                     log_extra = {
+                        "use_case": PROMPT_USE_CASE,
                         "prompt_id": prompt_config.get('id', PROMPT_USE_CASE),
                         "prompt_version": prompt_config.get('version', 'unknown'),
                         "prompt_framework": framework_note,
+                        "model_params": prompt_model_config.get('model_params', {}),
                     }
                     prompt_roles = prompt_model_config.get('prompt_roles', {})
                     replacements = {

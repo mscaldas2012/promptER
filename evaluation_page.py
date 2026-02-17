@@ -93,8 +93,10 @@ def evaluation_page():
                         llm_provider = factory.get_provider(provider_name)
 
                         log_extra = {
+                            "use_case": PROMPT_USE_CASE,
                             "prompt_id": prompt_config.get('id', PROMPT_USE_CASE),
                             "prompt_version": prompt_config.get('version', 'unknown'),
+                            "model_params": prompt_model_config.get('model_params', {}),
                         }
 
                         roles = {"system": system_prompt, "assistant": assistant_prompt}

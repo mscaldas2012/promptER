@@ -6,3 +6,4 @@ python-dotenv
 pyyaml
 
 langfuse
+opentelemetry-instrumentation-openai
