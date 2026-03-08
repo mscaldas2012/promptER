@@ -12,6 +12,7 @@
         "models": [
             "gpt-4o"
             ,"gpt-4o-mini"
+            ,"microsoft/phi-4-mini-reasoning"
 
         ]
     },

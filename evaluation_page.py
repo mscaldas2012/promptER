@@ -1,10 +1,10 @@
 import json
-import yaml
 import streamlit as st
 from llm_factory import LLMProviderFactory
 from logging_config import llm_logger
+from prompt_loader import load_prompt_config
 
-PROMPT_USE_CASE = "llm_evaluation"
+PROMPT_USE_CASE = "dfe-llm-evaluator"
 PROMPT_MODEL_NAME = "default"
 
 
@@ -14,12 +14,10 @@ def evaluation_page():
     # Load configurations
     with open('providers.json') as providers_file:
         providers_config = json.load(providers_file)
-    with open('config.yaml') as config_file:
-        config_data = yaml.safe_load(config_file)
 
-    prompt_config = config_data.get('prompts', {}).get(PROMPT_USE_CASE)
+    prompt_config = load_prompt_config(PROMPT_USE_CASE)
     if not prompt_config:
-        st.error(f"Prompt configuration '{PROMPT_USE_CASE}' not found in config.yaml.")
+        st.error(f"Prompt configuration '{PROMPT_USE_CASE}' not found in Langfuse or config.yaml.")
         st.stop()
 
     prompt_model_config = prompt_config.get('models', {}).get(PROMPT_MODEL_NAME)
@@ -52,7 +50,7 @@ def evaluation_page():
         "System Prompt (LLM judge instructions)",
         key="eval_system_prompt",
         height=180,
-        help="Loaded from config.yaml; you can edit for this session."
+        help="Loaded from Langfuse (or config.yaml fallback); you can edit for this session."
     )
 
     default_assistant_prompt = prompt_model_config.get('prompt_roles', {}).get('assistant', '')
@@ -63,7 +61,7 @@ def evaluation_page():
         "Assistant Prompt (output format / scoring response)",
         key="eval_assistant_prompt",
         height=180,
-        help="Loaded from config.yaml; you can edit for this session."
+        help="Loaded from Langfuse (or config.yaml fallback); you can edit for this session."
     )
 
     if 'eval_user_prompt' not in st.session_state:
