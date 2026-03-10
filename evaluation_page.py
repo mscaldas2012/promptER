@@ -26,19 +26,14 @@ def evaluation_page():
         st.stop()
 
     # Provider selection
+    providers = [k for k in providers_config if k != 'provider']
+    default_provider = providers_config.get('provider', providers[0])
     provider_name = st.radio(
         "Select a provider",
-        ["ollama", "azure_openai", "edav_openai"],
-        index=["ollama", "azure_openai", "edav_openai"].index(providers_config.get('provider', 'ollama'))
+        providers,
+        index=providers.index(default_provider)
     )
-
-    # Model selection
-    if provider_name == "ollama":
-        models = providers_config.get('ollama', {}).get('models', [])
-    elif provider_name == "edav_openai":
-        models = providers_config.get('edav_openai', {}).get('models', [])
-    else:
-        models = providers_config.get('azure_openai', {}).get('models', [])
+    models = providers_config.get(provider_name, {}).get('models', [])
     selected_model = st.selectbox("Select a model", models)
 
     # Prefill prompts from config, but allow edits (order: System -> Assistant -> User)

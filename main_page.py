@@ -73,14 +73,10 @@ def main_page():
     framework_options = load_framework_options()
 
     # Provider selection
-    provider_name = st.radio("Select a provider", ["ollama", "azure_openai", "edav_openai"], index=["ollama", "azure_openai", "edav_openai"].index(providers_config['provider']))
+    providers = [k for k in providers_config if k != 'provider']
+    default_provider = providers_config.get('provider', providers[0])
+    provider_name = st.radio("Select a provider", providers, index=providers.index(default_provider))
     models = providers_config[provider_name]['models']
-    # # Model selection
-    # if provider_name == "ollama":
-    #     models = providers_config['ollama']['models']
-    # elif provider_name == "edav_openai":
-    #     models = providers_config['edav_openai']['models']
-    # else:
     #     models = providers_config['azure_openai']['models']
     selected_model = st.selectbox("Select a model", models)
 

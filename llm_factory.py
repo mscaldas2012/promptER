@@ -1,11 +1,9 @@
 import os
 
 import ollama
-from azure.ai.inference import ChatCompletionsClient
-from azure.core.credentials import AzureKeyCredential
 from azure.identity import ClientSecretCredential
 from langfuse import Langfuse
-from openai import AzureOpenAI
+from openai import AzureOpenAI, OpenAI
 
 
 class LLMProvider:
@@ -198,12 +196,10 @@ class EDAVOpenAIProvider(LLMProvider):
 class AzureOpenAIProvider(LLMProvider):
     def __init__(self, langfuse_client):
         super().__init__(langfuse_client)
-        endpoint = os.getenv("AZURE_OPENAI_ENDPOINT")
-        api_key = os.getenv("AZURE_OPENAI_API_KEY")
-        self.client = ChatCompletionsClient(
-            endpoint=f"{endpoint}/openai/deployments/gpt-4o/",
-            api_version="2025-01-01-preview",
-            credential=AzureKeyCredential(api_key)
+        self.client = AzureOpenAI(
+            azure_endpoint=os.getenv("AZURE_OPENAI_ENDPOINT"),
+            api_key=os.getenv("AZURE_OPENAI_API_KEY"),
+            api_version=os.getenv("AZURE_OPENAI_API_VERSION", "2025-01-01-preview"),
         )
 
     def get_llm_response(self, user_prompt, model, roles, llm_logger, log_extra):
@@ -233,7 +229,7 @@ class AzureOpenAIProvider(LLMProvider):
                 model_parameters=model_params
             )
 
-            response = self.client.complete(
+            response = self.client.chat.completions.create(
                 model=model,
                 messages=messages,
             )
@@ -281,6 +277,90 @@ class AzureOpenAIProvider(LLMProvider):
             raise e
 
 
+class OpenAICompatibleProvider(LLMProvider):
+    """Generic provider for any OpenAI-compatible API (LMStudio, vLLM, etc.)."""
+    def __init__(self, langfuse_client):
+        super().__init__(langfuse_client)
+        self.client = OpenAI(
+            base_url=os.getenv("OPENAI_COMPATIBLE_BASE_URL", "http://localhost:1234/v1"),
+            api_key=os.getenv("OPENAI_COMPATIBLE_API_KEY", "lm-studio"),
+        )
+
+    def get_llm_response(self, user_prompt, model, roles, llm_logger, log_extra):
+        try:
+            messages = []
+            for role, content in roles.items():
+                if content:
+                    messages.append({'role': role, 'content': content})
+            messages.append({'role': 'user', 'content': user_prompt})
+
+            version = log_extra.get("prompt_version")
+            model_params = log_extra.get("model_params")
+
+            langfuse_span = self.langfuse.start_span(
+                name=log_extra.get("use_case", "openai-compatible-trace"),
+                input={"user_input": user_prompt},
+                metadata=log_extra,
+                version=version
+            )
+
+            langfuse_generation = langfuse_span.start_generation(
+                name="openai-compatible-generation",
+                input=messages,
+                model=model,
+                metadata=log_extra,
+                version=version,
+                model_parameters=model_params
+            )
+
+            response = self.client.chat.completions.create(
+                model=model,
+                messages=messages,
+            )
+
+            input_tokens = response.usage.prompt_tokens if response.usage else 0
+            output_tokens = response.usage.completion_tokens if response.usage else 0
+            response_text = response.choices[0].message.content
+
+            langfuse_generation.update(
+                output=response_text,
+                usage_details={"prompt_tokens": input_tokens, "completion_tokens": output_tokens}
+            )
+            langfuse_generation.end()
+
+            langfuse_span.update(output={"result": response_text})
+            langfuse_span.end()
+
+            self.langfuse.flush()
+
+            llm_logger.info(
+                "LLM call successful",
+                extra={
+                    **log_extra,
+                    "provider": "openai_compatible",
+                    "model_used": model,
+                    "input_tokens": input_tokens,
+                    "output_tokens": output_tokens,
+                    "outcome": "success",
+                    "input_text": user_prompt,
+                    "output_text": response_text,
+                },
+            )
+            return response_text
+        except Exception as e:
+            llm_logger.error(
+                "LLM call failed",
+                extra={
+                    **log_extra,
+                    "provider": "openai_compatible",
+                    "model_used": model,
+                    "outcome": "error",
+                    "error_message": str(e),
+                },
+            )
+            raise e
+
+
 class LLMProviderFactory:
     def __init__(self):
         self.langfuse = Langfuse()
@@ -292,5 +372,7 @@ class LLMProviderFactory:
             return AzureOpenAIProvider(self.langfuse)
         elif provider_name == "edav_openai":
             return EDAVOpenAIProvider(self.langfuse)
+        elif provider_name == "openai_compatible":
+            return OpenAICompatibleProvider(self.langfuse)
         else:
             raise ValueError(f"Unknown provider: {provider_name}")
