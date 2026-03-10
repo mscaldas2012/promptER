@@ -1,31 +1,20 @@
-import os
 import time
 
-from dotenv import load_dotenv
 from opentelemetry import trace
 from opentelemetry.sdk.trace import TracerProvider
-from opentelemetry.sdk.trace.export import BatchSpanProcessor
-from azure.monitor.opentelemetry.exporter import AzureMonitorTraceExporter
 
-load_dotenv()
-# Set up tracing
-tracer_provider = TracerProvider()
-trace.set_tracer_provider(tracer_provider)
 
-connection_string = os.getenv("APPLICATIONINSIGHTS_CONNECTION_STRING")
-exporter = AzureMonitorTraceExporter(connection_string=connection_string)
-span_processor = BatchSpanProcessor(exporter)
-tracer_provider.add_span_processor(span_processor)
+def run_tracing_smoke_test():
+    """Create a span with the default tracer provider to ensure telemetry wiring works."""
+    trace.set_tracer_provider(TracerProvider())
+    tracer = trace.get_tracer(__name__)
 
-tracer = trace.get_tracer(__name__)
+    with tracer.start_as_current_span("test-span") as span:
+        span.set_attribute("test.attribute", "hello-world")
+        time.sleep(0.1)
+        return span.is_recording()
 
-# Create a test trace
-with tracer.start_as_current_span("test-span") as span:
-    span.set_attribute("test.attribute", "hello-world")
-    print("Test span created")
-    time.sleep(1)
 
-# Force flush
-print("Flushing data...")
-tracer_provider.shutdown()
-print("Done! Check Application Insights in 1-2 minutes")
+if __name__ == "__main__":
+    span_recording = run_tracing_smoke_test()
+    print(f"Span recording without Azure exporter: {span_recording}")

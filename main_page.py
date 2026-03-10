@@ -1,11 +1,11 @@
 
 import streamlit as st
 import json
-import yaml
 from llm_factory import LLMProviderFactory
 from logging_config import llm_logger
+from prompt_loader import load_prompt_config
 
-PROMPT_USE_CASE = "system_prompt_generator"
+PROMPT_USE_CASE = "meta-prompt-generator"
 PROMPT_MODEL_NAME = "default"
 FRAMEWORK_OPTIONS_PATH = "framework_options.json"
 
@@ -59,12 +59,10 @@ def main_page():
     # Load configurations
     with open('providers.json') as providers_file:
         providers_config = json.load(providers_file)
-    with open('config.yaml') as config_file:
-        config_data = yaml.safe_load(config_file)
 
-    prompt_config = config_data.get('prompts', {}).get(PROMPT_USE_CASE)
+    prompt_config = load_prompt_config(PROMPT_USE_CASE)
     if not prompt_config:
-        st.error(f"Prompt configuration '{PROMPT_USE_CASE}' not found in config.yaml.")
+        st.error(f"Prompt configuration '{PROMPT_USE_CASE}' not found in Langfuse or config.yaml.")
         st.stop()
 
     prompt_model_config = prompt_config.get('models', {}).get(PROMPT_MODEL_NAME)
@@ -75,14 +73,10 @@ def main_page():
     framework_options = load_framework_options()
 
     # Provider selection
-    provider_name = st.radio("Select a provider", ["ollama", "azure_openai", "edav_openai"], index=["ollama", "azure_openai", "edav_openai"].index(providers_config['provider']))
+    providers = [k for k in providers_config if k != 'provider']
+    default_provider = providers_config.get('provider', providers[0])
+    provider_name = st.radio("Select a provider", providers, index=providers.index(default_provider))
     models = providers_config[provider_name]['models']
-    # # Model selection
-    # if provider_name == "ollama":
-    #     models = providers_config['ollama']['models']
-    # elif provider_name == "edav_openai":
-    #     models = providers_config['edav_openai']['models']
-    # else:
     #     models = providers_config['azure_openai']['models']
     selected_model = st.selectbox("Select a model", models)
 
@@ -127,9 +121,11 @@ def main_page():
                     llm_provider = factory.get_provider(provider_name)
 
                     log_extra = {
+                        "use_case": PROMPT_USE_CASE,
                         "prompt_id": prompt_config.get('id', PROMPT_USE_CASE),
                         "prompt_version": prompt_config.get('version', 'unknown'),
                         "prompt_framework": framework_note,
+                        "model_params": prompt_model_config.get('model_params', {}),
                     }
                     prompt_roles = prompt_model_config.get('prompt_roles', {})
                     replacements = {

@@ -12,12 +12,21 @@
         "models": [
             "gpt-4o"
             ,"gpt-4o-mini"
+            ,"microsoft/phi-4-mini-reasoning"
 
         ]
     },
     "edav_openai": {
         "models": [
             "gpt4.1-mini-dgw-default"
+        ]
+    },
+    "openai_compatible": {
+        "models": [
+            "microsoft/phi-4-mini-reasoning"
+            ,"mistralai/mistral-small-3.2"
+            ,"qwen3-coder-30b-a3b-instruct"
+    
         ]
     }
 }

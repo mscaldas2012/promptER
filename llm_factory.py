@@ -1,163 +1,114 @@
-import ollama
-import time
 import os
-from azure.ai.inference import ChatCompletionsClient
-from azure.core.credentials import AzureKeyCredential
+
+import ollama
 from azure.identity import ClientSecretCredential
-from openai import api_version, AzureOpenAI
-from opentelemetry import trace, metrics
-from opentelemetry.sdk.trace import TracerProvider
-from opentelemetry.sdk.metrics import MeterProvider
-from opentelemetry.sdk.trace.export import BatchSpanProcessor
-from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
-from azure.monitor.opentelemetry.exporter import (
-    AzureMonitorTraceExporter,
-    AzureMonitorMetricExporter
-)
-
-# Initialize OpenTelemetry
-trace.set_tracer_provider(TracerProvider())
-tracer = trace.get_tracer(__name__)
-
-# Configure Azure Monitor exporters
-connection_string = os.getenv("APPLICATIONINSIGHTS_CONNECTION_STRING")
-if connection_string:
-    trace_exporter = AzureMonitorTraceExporter(connection_string=connection_string)
-    span_processor = BatchSpanProcessor(trace_exporter)
-    trace.get_tracer_provider().add_span_processor(span_processor)
-
-    metric_reader = PeriodicExportingMetricReader(
-        AzureMonitorMetricExporter(connection_string=connection_string)
-    )
-    metrics.set_meter_provider(MeterProvider(metric_readers=[metric_reader]))
-
-meter = metrics.get_meter(__name__)
-llm_call_counter = meter.create_counter(
-    "llm.calls",
-    description="Number of LLM calls",
-    unit="1"
-)
-llm_latency_histogram = meter.create_histogram(
-    "llm.latency",
-    description="LLM call latency",
-    unit="ms"
-)
-llm_tokens_counter = meter.create_counter(
-    "llm.tokens",
-    description="Token usage",
-    unit="1"
-)
+from langfuse import Langfuse
+from openai import AzureOpenAI, OpenAI
 
 
 class LLMProvider:
+    def __init__(self, langfuse_client):
+        self.langfuse = langfuse_client
+
     def get_llm_response(self, user_prompt, model, roles, llm_logger, log_extra):
         raise NotImplementedError
 
 
 class OllamaProvider(LLMProvider):
     def get_llm_response(self, user_prompt, model, roles, llm_logger, log_extra):
-        with tracer.start_as_current_span("ollama.chat") as span:
-            start_time = time.time()
-            span.set_attribute("llm.provider", "ollama")
-            span.set_attribute("llm.model", model)
-            span.set_attribute("llm.user_prompt", user_prompt)
+        try:
+            messages = []
+            for role, content in roles.items():
+                if content:
+                    messages.append({'role': role, 'content': content})
+            messages.append({'role': 'user', 'content': user_prompt})
 
-            try:
-                messages = []
-                for role, content in roles.items():
-                    if content:
-                        messages.append({'role': role, 'content': content})
-                messages.append({'role': 'user', 'content': user_prompt})
+            version = log_extra.get("prompt_version")
+            model_params = log_extra.get("model_params")
 
-                response = ollama.chat(
-                    model=model,
-                    messages=messages,
-                )
-                latency = time.time() - start_time
-                latency_ms = latency * 1000
+            langfuse_span = self.langfuse.start_span(
+                name=log_extra.get("use_case", "ollama-trace"),
+                input={"user_input": user_prompt},
+                metadata=log_extra,
+                version=version
+            )
 
-                input_tokens = response.get('prompt_eval_count', 0)
-                output_tokens = response.get('eval_count', 0)
+            langfuse_generation = langfuse_span.start_generation(
+                name="ollama-generation",
+                input=messages,
+                model=model,
+                metadata=log_extra,
+                version=version,
+                model_parameters=model_params
+            )
 
-                # Set span attributes
-                span.set_attribute("llm.input_tokens", input_tokens)
-                span.set_attribute("llm.output_tokens", output_tokens)
-                span.set_attribute("llm.latency_ms", latency_ms)
-                span.set_attribute("llm.response", response['message']['content'])
+            response = ollama.chat(
+                model=model,
+                messages=messages,
+            )
 
-                # Record metrics
-                llm_call_counter.add(1, {"provider": "ollama", "model": model, "outcome": "success"})
-                llm_latency_histogram.record(latency_ms, {"provider": "ollama", "model": model})
-                llm_tokens_counter.add(input_tokens, {"provider": "ollama", "model": model, "token_type": "input"})
-                llm_tokens_counter.add(output_tokens, {"provider": "ollama", "model": model, "token_type": "output"})
+            input_tokens = response.get('prompt_eval_count', 0)
+            output_tokens = response.get('eval_count', 0)
+            response_text = response['message']['content']
 
-                llm_logger.info(
-                    "LLM call successful",
-                    extra={
-                        **log_extra,
-                        "provider": "ollama",
-                        "model_used": model,
-                        "input_tokens": input_tokens,
-                        "output_tokens": output_tokens,
-                        "latency": latency,
-                        "outcome": "success",
-                        "input_text": user_prompt,
-                        "output_text": response['message']['content'],
-                    },
-                )
-                return response['message']['content']
-            except Exception as e:
-                latency = time.time() - start_time
-                latency_ms = latency * 1000
+            langfuse_generation.update(
+                output=response_text,
+                usage_details={"prompt_tokens": input_tokens, "completion_tokens": output_tokens}
+            )
+            langfuse_generation.end()
+            
+            langfuse_span.update(output={"result": response_text})
+            langfuse_span.end()
+            
+            self.langfuse.flush()
 
-                span.set_status(trace.Status(trace.StatusCode.ERROR, str(e)))
-                span.set_attribute("llm.error", str(e))
-                span.set_attribute("llm.latency_ms", latency_ms)
-
-                llm_call_counter.add(1, {"provider": "ollama", "model": model, "outcome": "error"})
-                llm_latency_histogram.record(latency_ms, {"provider": "ollama", "model": model})
-
-                llm_logger.error(
-                    "LLM call failed",
-                    extra={
-                        **log_extra,
-                        "provider": "ollama",
-                        "model_used": model,
-                        "latency": latency,
-                        "outcome": "error",
-                        "error_message": str(e),
-                    },
-                )
-                raise e
+            llm_logger.info(
+                "LLM call successful",
+                extra={
+                    **log_extra,
+                    "provider": "ollama",
+                    "model_used": model,
+                    "input_tokens": input_tokens,
+                    "output_tokens": output_tokens,
+                    "outcome": "success",
+                    "input_text": user_prompt,
+                    "output_text": response_text,
+                },
+            )
+            return response_text
+        except Exception as e:
+            llm_logger.error(
+                "LLM call failed",
+                extra={
+                    **log_extra,
+                    "provider": "ollama",
+                    "model_used": model,
+                    "outcome": "error",
+                    "error_message": str(e),
+                },
+            )
+            raise e
 
 
 
 class EDAVOpenAIProvider(LLMProvider):
-    def __init__(self):
+    def __init__(self, langfuse_client):
+        super().__init__(langfuse_client)
         TENANT_ID = os.getenv("EDAV_TENANT_ID")
-
-        # From the customer SP
         CLIENT_ID = os.getenv("EDAV_CLIENT_ID")
         CLIENT_SECRET = os.getenv("EDAV_CLIENT_SECRET")
-
-        # Authenticate using Consumer Dev SP credentials
         credential = ClientSecretCredential(
             tenant_id=TENANT_ID,
             client_id=CLIENT_ID,
             client_secret=CLIENT_SECRET,
         )
-
-        # Retrieve the token using Provider SP as the scope
         scope = os.getenv("EDAV_SCOPE_TOKEN_AUDIENCE")
         if not scope:
             raise ValueError("EDAV_SCOPE_TOKEN_AUDIENCE is missing; cannot request an access token.")
-
         try:
             token = credential.get_token(scope).token
             print(f"Token with scope {scope} acquired successfully: {token[:25]}....")
-
             MAAS_SUBSCRIPTION_KEY = os.getenv("EDAV_SUBSCRIPTION_KEY")
-
             self.client = AzureOpenAI(
                 api_version=os.getenv("EDAV_AZURE_OPENAI_API_VERSION"),
                 azure_endpoint=os.getenv("EDAV_AZURE_OPENAI_ENDPOINT"),
@@ -167,186 +118,261 @@ class EDAVOpenAIProvider(LLMProvider):
         except Exception as e:
             raise RuntimeError(f"Error acquiring token for scope {scope}: {e}") from e
 
-
-
     def get_llm_response(self, user_prompt, model, roles, llm_logger, log_extra):
-        with tracer.start_as_current_span("azure_openai.chat") as span:
-            start_time = time.time()
-            span.set_attribute("llm.provider", "azure_openai")
-            span.set_attribute("llm.model", model)
-            span.set_attribute("llm.user_prompt", user_prompt)
+        try:
+            messages = []
+            for role, content in roles.items():
+                if content:
+                    messages.append({'role': role, 'content': content})
+            messages.append({'role': 'user', 'content': user_prompt})
 
-            try:
-                messages = []
-                for role, content in roles.items():
-                    if content:
-                        messages.append({'role': role, 'content': content})
-                messages.append({'role': 'user', 'content': user_prompt})
+            version = log_extra.get("prompt_version")
+            model_params = log_extra.get("model_params")
 
-                response = self.client.chat.completions.create(
-                    model=model,
-                    messages=messages,
-                )
-                latency = time.time() - start_time
-                latency_ms = latency * 1000
+            langfuse_span = self.langfuse.start_span(
+                name=log_extra.get("use_case", "edav-openai-trace"),
+                input={"user_input": user_prompt},
+                metadata=log_extra,
+                version=version
+            )
 
-                input_tokens = response.usage.prompt_tokens
-                output_tokens = response.usage.completion_tokens
-                response_text = response.choices[0].message.content
+            langfuse_generation = langfuse_span.start_generation(
+                name="edav-openai-generation",
+                input=messages,
+                model=model,
+                metadata=log_extra,
+                version=version,
+                model_parameters=model_params
+            )
 
-                # Set span attributes
-                span.set_attribute("llm.input_tokens", input_tokens)
-                span.set_attribute("llm.output_tokens", output_tokens)
-                span.set_attribute("llm.latency_ms", latency_ms)
-                span.set_attribute("llm.response", response_text)
+            response = self.client.chat.completions.create(
+                model=model,
+                messages=messages,
+            )
 
-                # Record metrics
-                llm_call_counter.add(1, {"provider": "edav_openai", "model": model, "outcome": "success"})
-                llm_latency_histogram.record(latency_ms, {"provider": "edav_openai", "model": model})
-                llm_tokens_counter.add(input_tokens,
-                                       {"provider": "edav_openai", "model": model, "token_type": "input"})
-                llm_tokens_counter.add(output_tokens,
-                                       {"provider": "edav_openai", "model": model, "token_type": "output"})
+            input_tokens = response.usage.prompt_tokens
+            output_tokens = response.usage.completion_tokens
+            response_text = response.choices[0].message.content
 
-                llm_logger.info(
-                    "LLM call successful",
-                    extra={
-                        **log_extra,
-                        "provider": "edav_openai",
-                        "model_used": model,
-                        "input_tokens": input_tokens,
-                        "output_tokens": output_tokens,
-                        "latency": latency,
-                        "outcome": "success",
-                        "input_text": user_prompt,
-                        "output_text": response_text,
-                    },
-                )
-                return response_text
-            except Exception as e:
-                latency = time.time() - start_time
-                latency_ms = latency * 1000
+            langfuse_generation.update(
+                output=response_text,
+                usage_details={"prompt_tokens": input_tokens, "completion_tokens": output_tokens}
+            )
+            langfuse_generation.end()
 
-                span.set_status(trace.Status(trace.StatusCode.ERROR, str(e)))
-                span.set_attribute("llm.error", str(e))
-                span.set_attribute("llm.latency_ms", latency_ms)
+            langfuse_span.update(output={"result": response_text})
+            langfuse_span.end()
+            
+            self.langfuse.flush()
 
-                llm_call_counter.add(1, {"provider": "edav_openai", "model": model, "outcome": "error"})
-                llm_latency_histogram.record(latency_ms, {"provider": "edav_openai", "model": model})
-
-                llm_logger.error(
-                    "LLM call failed",
-                    extra={
-                        **log_extra,
-                        "provider": "edav_openai",
-                        "model_used": model,
-                        "latency": latency,
-                        "outcome": "error",
-                        "error_message": str(e),
-                    },
-                )
-                raise e
+            llm_logger.info(
+                "LLM call successful",
+                extra={
+                    **log_extra,
+                    "provider": "edav_openai",
+                    "model_used": model,
+                    "input_tokens": input_tokens,
+                    "output_tokens": output_tokens,
+                    "outcome": "success",
+                    "input_text": user_prompt,
+                    "output_text": response_text,
+                },
+            )
+            return response_text
+        except Exception as e:
+            llm_logger.error(
+                "LLM call failed",
+                extra={
+                    **log_extra,
+                    "provider": "edav_openai",
+                    "model_used": model,
+                    "outcome": "error",
+                    "error_message": str(e),
+                },
+            )
+            raise e
 
 
 class AzureOpenAIProvider(LLMProvider):
-    def __init__(self):
-        endpoint = os.getenv("AZURE_OPENAI_ENDPOINT")
-        api_key = os.getenv("AZURE_OPENAI_API_KEY")
-
-        self.client = ChatCompletionsClient(
-            endpoint=f"{endpoint}/openai/deployments/gpt-4o/",
-            api_version="2025-01-01-preview",
-            credential=AzureKeyCredential(api_key)
+    def __init__(self, langfuse_client):
+        super().__init__(langfuse_client)
+        self.client = AzureOpenAI(
+            azure_endpoint=os.getenv("AZURE_OPENAI_ENDPOINT"),
+            api_key=os.getenv("AZURE_OPENAI_API_KEY"),
+            api_version=os.getenv("AZURE_OPENAI_API_VERSION", "2025-01-01-preview"),
         )
 
+    def get_llm_response(self, user_prompt, model, roles, llm_logger, log_extra):
+        try:
+            messages = []
+            for role, content in roles.items():
+                if content:
+                    messages.append({'role': role, 'content': content})
+            messages.append({'role': 'user', 'content': user_prompt})
+
+            version = log_extra.get("prompt_version")
+            model_params = log_extra.get("model_params")
+
+            langfuse_span = self.langfuse.start_span(
+                name=log_extra.get("use_case", "azure-openai-trace"),
+                input={"user_input": user_prompt},
+                metadata=log_extra,
+                version=version
+            )
+
+            langfuse_generation = langfuse_span.start_generation(
+                name="azure-openai-generation",
+                input=messages,
+                model=model,
+                metadata=log_extra,
+                version=version,
+                model_parameters=model_params
+            )
+
+            response = self.client.chat.completions.create(
+                model=model,
+                messages=messages,
+            )
+
+            input_tokens = response.usage.prompt_tokens
+            output_tokens = response.usage.completion_tokens
+            response_text = response.choices[0].message.content
+
+            langfuse_generation.update(
+                output=response_text,
+                usage_details={"prompt_tokens": input_tokens, "completion_tokens": output_tokens}
+            )
+            langfuse_generation.end()
+
+            langfuse_span.update(output={"result": response_text})
+            langfuse_span.end()
+            
+            self.langfuse.flush()
+
+            llm_logger.info(
+                "LLM call successful",
+                extra={
+                    **log_extra,
+                    "provider": "azure_openai",
+                    "model_used": model,
+                    "input_tokens": input_tokens,
+                    "output_tokens": output_tokens,
+                    "outcome": "success",
+                    "input_text": user_prompt,
+                    "output_text": response_text,
+                },
+            )
+            return response_text
+        except Exception as e:
+            llm_logger.error(
+                "LLM call failed",
+                extra={
+                    **log_extra,
+                    "provider": "azure_openai",
+                    "model_used": model,
+                    "outcome": "error",
+                    "error_message": str(e),
+                },
+            )
+            raise e
+
+
+class OpenAICompatibleProvider(LLMProvider):
+    """Generic provider for any OpenAI-compatible API (LMStudio, vLLM, etc.)."""
+    def __init__(self, langfuse_client):
+        super().__init__(langfuse_client)
+        self.client = OpenAI(
+            base_url=os.getenv("OPENAI_COMPATIBLE_BASE_URL", "http://localhost:1234/v1"),
+            api_key=os.getenv("OPENAI_COMPATIBLE_API_KEY", "lm-studio"),
+        )
 
     def get_llm_response(self, user_prompt, model, roles, llm_logger, log_extra):
-        with tracer.start_as_current_span("azure_openai.chat") as span:
-            start_time = time.time()
-            span.set_attribute("llm.provider", "azure_openai")
-            span.set_attribute("llm.model", model)
-            span.set_attribute("llm.user_prompt", user_prompt)
+        try:
+            messages = []
+            for role, content in roles.items():
+                if content:
+                    messages.append({'role': role, 'content': content})
+            messages.append({'role': 'user', 'content': user_prompt})
 
-            try:
-                messages = []
-                for role, content in roles.items():
-                    if content:
-                        messages.append({'role': role, 'content': content})
-                messages.append({'role': 'user', 'content': user_prompt})
+            version = log_extra.get("prompt_version")
+            model_params = log_extra.get("model_params")
 
-                response = self.client.complete(
-                    model=model,
-                    messages=messages,
-                )
-                latency = time.time() - start_time
-                latency_ms = latency * 1000
+            langfuse_span = self.langfuse.start_span(
+                name=log_extra.get("use_case", "openai-compatible-trace"),
+                input={"user_input": user_prompt},
+                metadata=log_extra,
+                version=version
+            )
 
-                input_tokens = response.usage.prompt_tokens
-                output_tokens = response.usage.completion_tokens
-                response_text = response.choices[0].message.content
+            langfuse_generation = langfuse_span.start_generation(
+                name="openai-compatible-generation",
+                input=messages,
+                model=model,
+                metadata=log_extra,
+                version=version,
+                model_parameters=model_params
+            )
 
-                # Set span attributes
-                span.set_attribute("llm.input_tokens", input_tokens)
-                span.set_attribute("llm.output_tokens", output_tokens)
-                span.set_attribute("llm.latency_ms", latency_ms)
-                span.set_attribute("llm.response", response_text)
+            response = self.client.chat.completions.create(
+                model=model,
+                messages=messages,
+            )
 
-                # Record metrics
-                llm_call_counter.add(1, {"provider": "azure_openai", "model": model, "outcome": "success"})
-                llm_latency_histogram.record(latency_ms, {"provider": "azure_openai", "model": model})
-                llm_tokens_counter.add(input_tokens,
-                                       {"provider": "azure_openai", "model": model, "token_type": "input"})
-                llm_tokens_counter.add(output_tokens,
-                                       {"provider": "azure_openai", "model": model, "token_type": "output"})
+            input_tokens = response.usage.prompt_tokens if response.usage else 0
+            output_tokens = response.usage.completion_tokens if response.usage else 0
+            response_text = response.choices[0].message.content
 
-                llm_logger.info(
-                    "LLM call successful",
-                    extra={
-                        **log_extra,
-                        "provider": "azure_openai",
-                        "model_used": model,
-                        "input_tokens": input_tokens,
-                        "output_tokens": output_tokens,
-                        "latency": latency,
-                        "outcome": "success",
-                        "input_text": user_prompt,
-                        "output_text": response_text,
-                    },
-                )
-                return response_text
-            except Exception as e:
-                latency = time.time() - start_time
-                latency_ms = latency * 1000
+            langfuse_generation.update(
+                output=response_text,
+                usage_details={"prompt_tokens": input_tokens, "completion_tokens": output_tokens}
+            )
+            langfuse_generation.end()
 
-                span.set_status(trace.Status(trace.StatusCode.ERROR, str(e)))
-                span.set_attribute("llm.error", str(e))
-                span.set_attribute("llm.latency_ms", latency_ms)
+            langfuse_span.update(output={"result": response_text})
+            langfuse_span.end()
 
-                llm_call_counter.add(1, {"provider": "azure_openai", "model": model, "outcome": "error"})
-                llm_latency_histogram.record(latency_ms, {"provider": "azure_openai", "model": model})
+            self.langfuse.flush()
 
-                llm_logger.error(
-                    "LLM call failed",
-                    extra={
-                        **log_extra,
-                        "provider": "azure_openai",
-                        "model_used": model,
-                        "latency": latency,
-                        "outcome": "error",
-                        "error_message": str(e),
-                    },
-                )
-                raise e
+            llm_logger.info(
+                "LLM call successful",
+                extra={
+                    **log_extra,
+                    "provider": "openai_compatible",
+                    "model_used": model,
+                    "input_tokens": input_tokens,
+                    "output_tokens": output_tokens,
+                    "outcome": "success",
+                    "input_text": user_prompt,
+                    "output_text": response_text,
+                },
+            )
+            return response_text
+        except Exception as e:
+            llm_logger.error(
+                "LLM call failed",
+                extra={
+                    **log_extra,
+                    "provider": "openai_compatible",
+                    "model_used": model,
+                    "outcome": "error",
+                    "error_message": str(e),
+                },
+            )
+            raise e
 
 
 class LLMProviderFactory:
+    def __init__(self):
+        self.langfuse = Langfuse()
+
     def get_provider(self, provider_name):
         if provider_name == "ollama":
-            return OllamaProvider()
+            return OllamaProvider(self.langfuse)
         elif provider_name == "azure_openai":
-            return AzureOpenAIProvider()
+            return AzureOpenAIProvider(self.langfuse)
         elif provider_name == "edav_openai":
-            return EDAVOpenAIProvider()
+            return EDAVOpenAIProvider(self.langfuse)
+        elif provider_name == "openai_compatible":
+            return OpenAICompatibleProvider(self.langfuse)
         else:
             raise ValueError(f"Unknown provider: {provider_name}")
-
