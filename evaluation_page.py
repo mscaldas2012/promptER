@@ -3,6 +3,12 @@ import streamlit as st
 from llm_factory import LLMProviderFactory
 from logging_config import llm_logger
 from prompt_loader import load_prompt_config
+from utils import extract_thinking
+
+
+@st.dialog("💭 Model Thinking", width="large")
+def _show_thinking_dialog(content: str) -> None:
+    st.markdown(content)
 
 PROMPT_USE_CASE = "dfe-llm-evaluator"
 PROMPT_MODEL_NAME = "default"
@@ -63,6 +69,8 @@ def evaluation_page():
         st.session_state.eval_user_prompt = ""
     if 'evaluation_result' not in st.session_state:
         st.session_state.evaluation_result = None
+    if 'evaluation_thinking' not in st.session_state:
+        st.session_state.evaluation_thinking = None
 
     # User prompt (placed before the Run button)
     st.session_state.eval_user_prompt = st.text_area(
@@ -104,15 +112,20 @@ def evaluation_page():
                             log_extra
                         )
 
-                        st.session_state.evaluation_result = evaluation
+                        clean_eval, thinking = extract_thinking(evaluation)
+                        st.session_state.evaluation_thinking = thinking
+                        st.session_state.evaluation_result = clean_eval
                     except Exception as e:
+                        st.session_state.evaluation_thinking = None
                         st.session_state.evaluation_result = f"An error occurred: {e}"
 
-    if st.session_state.evaluation_result and not run_clicked:
+    if st.session_state.evaluation_result:
         with result_area:
-            st.subheader("Evaluation Result")
-            st.markdown(st.session_state.evaluation_result)
-    elif st.session_state.evaluation_result and run_clicked:
-        with result_area:
-            st.subheader("Evaluation Result")
+            header_col, btn_col = st.columns([4, 1])
+            with header_col:
+                st.subheader("Evaluation Result")
+            with btn_col:
+                if st.session_state.get("evaluation_thinking"):
+                    if st.button("💭 View Thinking", key="view_thinking_eval"):
+                        _show_thinking_dialog(st.session_state.evaluation_thinking)
             st.markdown(st.session_state.evaluation_result)

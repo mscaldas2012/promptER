@@ -19,11 +19,15 @@ def _try_langfuse_fetch(langfuse_client, lf_name):
     except Exception as e:
         # Inspect common HTTP/SDK error shapes to give helpful messages
         msg = str(e)
-        if hasattr(e, "status_code") and e.status_code in (401, 403):
-            logger.warning("Langfuse auth error (status %s) when fetching '%s': %s", e.status_code, lf_name, msg)
+        status = getattr(e, "status_code", None)
+        if status in (401, 403):
+            logger.debug("Langfuse prompt '%s' not accessible (status %s) — falling back to config.yaml", lf_name, status)
+            return None
+        if status == 404 or "404" in msg or "not found" in msg.lower():
+            logger.debug("Langfuse prompt '%s' not found (404) — falling back to config.yaml", lf_name)
             return None
         if "401" in msg or "Unauthorized" in msg or "Invalid credentials" in msg:
-            logger.warning("Langfuse auth issue when fetching '%s': %s", lf_name, msg)
+            logger.debug("Langfuse prompt '%s' not accessible (auth) — falling back to config.yaml", lf_name)
             return None
         # Other errors — re-raise so caller can decide
         raise
@@ -57,39 +61,50 @@ def load_prompt_config(prompt_key):
             fetched = _try_langfuse_fetch(langfuse_client, lf_name)
             if fetched:
                 logger.info("Loaded prompt '%s' from Langfuse.", lf_name)
-                # Normalize Langfuse prompt shape into the config.yaml-like structure
+                # Normalize Langfuse prompt shape into the config.yaml-like structure.
+                # `fetched` may be a Langfuse SDK object (TextPromptClient / ChatPromptClient)
+                # or a plain dict depending on SDK version — handle both.
                 data = fetched
-                # unwrap common wrapper
-                if isinstance(data, dict) and "data" in data and isinstance(data["data"], dict):
+
+                def _get(obj, *keys, default=None):
+                    """Retrieve a value by key from a dict or attribute from an object."""
+                    for k in keys:
+                        try:
+                            val = obj[k] if isinstance(obj, dict) else getattr(obj, k, None)
+                            if val is not None and val != "":
+                                return val
+                        except (KeyError, TypeError):
+                            pass
+                    return default
+
+                # unwrap common dict wrapper {"data": {...}}
+                if isinstance(data, dict) and isinstance(data.get("data"), dict):
                     data = data["data"]
 
-                # Try to find system/assistant content
-                def _pick(*keys):
-                    for k in keys:
-                        if isinstance(data, dict) and k in data and data[k]:
-                            return data[k]
-                    return ""
-
                 # If there's already a prompt_roles block, use that directly
-                if isinstance(data, dict) and "prompt_roles" in data and isinstance(data["prompt_roles"], dict):
-                    prompt_roles = data["prompt_roles"]
+                prompt_roles_raw = _get(data, "prompt_roles")
+                if isinstance(prompt_roles_raw, dict):
+                    prompt_roles = prompt_roles_raw
                 else:
-                    # Common places where a Langfuse prompt stores main text
-                    possible_system = _pick("system", "instructions", "prompt", "content", "template", "text")
-                    possible_assistant = _pick("assistant", "assistant_instructions", "output_format")
-                    system_text = possible_system if isinstance(possible_system, str) else json_safe_str(possible_system)
-                    assistant_text = possible_assistant if isinstance(possible_assistant, str) else json_safe_str(possible_assistant)
+                    # Langfuse v3 TextPromptClient: .prompt is the raw string; v3 ChatPromptClient: list
+                    raw_prompt = _get(data, "prompt", "system", "instructions", "content", "template", "text", default="")
+                    raw_assistant = _get(data, "assistant", "assistant_instructions", "output_format", default="")
+                    system_text = raw_prompt if isinstance(raw_prompt, str) else json_safe_str(raw_prompt)
+                    assistant_text = raw_assistant if isinstance(raw_assistant, str) else json_safe_str(raw_assistant)
                     prompt_roles = {"system": system_text, "assistant": assistant_text}
 
-                # Build a config structure similar to config.yaml
+                # Langfuse v3 .config dict may carry model_params
+                extra_config = _get(data, "config", default={})
+                model_params = (extra_config or {}).get("model_params", {}) if isinstance(extra_config, dict) else {}
+
                 cfg = {
-                    "id": data.get("id") or data.get("name") or lf_name,
-                    "version": data.get("version") or data.get("label") or "unknown",
-                    "purpose": data.get("purpose") or data.get("description") or "",
+                    "id": _get(data, "id", "name", default=lf_name),
+                    "version": _get(data, "version", "label", default="unknown"),
+                    "purpose": _get(data, "purpose", "description", default=""),
                     "models": {
                         "default": {
                             "prompt_roles": prompt_roles,
-                            "model_params": data.get("model_params", {}),
+                            "model_params": model_params,
                         }
                     }
                 }
