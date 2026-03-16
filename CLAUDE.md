@@ -12,6 +12,12 @@ pip install -r requirements.txt
 cp .env.example .env  # then fill in credentials
 ```
 
+**Worktree setup** (after `claude worktree` creates a new worktree):
+```bash
+cp .env .claude/worktrees/<name>/.env
+```
+`.env` is git-ignored and not inherited by worktrees. Without it, Langfuse silently drops all traces (no error is raised).
+
 **Run:**
 ```bash
 streamlit run app.py

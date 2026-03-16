@@ -10,85 +10,96 @@ class LLMProvider:
     def __init__(self, langfuse_client):
         self.langfuse = langfuse_client
 
+    def _build_messages(self, user_prompt, roles):
+        messages = []
+        assistant_prefill = None
+        for role, content in roles.items():
+            if not content:
+                continue
+            if role == 'assistant':
+                assistant_prefill = content  # defer until after user message
+            else:
+                messages.append({'role': role, 'content': content})
+        messages.append({'role': 'user', 'content': user_prompt})
+        if assistant_prefill:
+            messages.append({'role': 'assistant', 'content': assistant_prefill})
+        return messages
+
+    def _traced_call(self, provider_name, model, user_prompt, messages, log_extra, llm_logger, call_fn):
+        """
+        call_fn(messages) -> (response_text, input_tokens, output_tokens)
+        Creates a Langfuse span (trace root) with a nested generation (the LLM call).
+        Uses span.start_observation(as_type='generation') — the non-deprecated v3 API.
+        Langfuse v3 requires a root span to produce a visible trace; a root-level
+        generation alone does not surface as a trace in the Langfuse UI.
+        """
+        version = log_extra.get("prompt_version")
+
+        span = self.langfuse.start_span(
+            name=log_extra.get("use_case", f"{provider_name}-trace"),
+            input={"user_input": user_prompt},
+            metadata=log_extra,
+            version=version,
+        )
+        generation = span.start_observation(
+            as_type="generation",
+            name=f"{provider_name}-generation",
+            input=messages,
+            model=model,
+            metadata=log_extra,
+            version=version,
+            model_parameters=log_extra.get("model_params"),
+        )
+
+        try:
+            response_text, input_tokens, output_tokens = call_fn(messages)
+
+            generation.update(
+                output=response_text,
+                usage_details={"prompt_tokens": input_tokens, "completion_tokens": output_tokens},
+            )
+            generation.end()
+            span.update(output={"result": response_text})
+            span.end()
+            self.langfuse.flush()
+
+            llm_logger.info("LLM call successful", extra={
+                **log_extra,
+                "provider": provider_name,
+                "model_used": model,
+                "input_tokens": input_tokens,
+                "output_tokens": output_tokens,
+                "outcome": "success",
+                "input_text": user_prompt,
+                "output_text": response_text,
+            })
+            return response_text
+        except Exception as e:
+            generation.update(level="ERROR", status_message=str(e))
+            generation.end()
+            span.end()
+            self.langfuse.flush()
+            llm_logger.error("LLM call failed", extra={
+                **log_extra,
+                "provider": provider_name,
+                "model_used": model,
+                "outcome": "error",
+                "error_message": str(e),
+            })
+            raise
+
     def get_llm_response(self, user_prompt, model, roles, llm_logger, log_extra):
         raise NotImplementedError
 
 
 class OllamaProvider(LLMProvider):
     def get_llm_response(self, user_prompt, model, roles, llm_logger, log_extra):
-        try:
-            messages = []
-            for role, content in roles.items():
-                if content:
-                    messages.append({'role': role, 'content': content})
-            messages.append({'role': 'user', 'content': user_prompt})
-
-            version = log_extra.get("prompt_version")
-            model_params = log_extra.get("model_params")
-
-            langfuse_span = self.langfuse.start_span(
-                name=log_extra.get("use_case", "ollama-trace"),
-                input={"user_input": user_prompt},
-                metadata=log_extra,
-                version=version
-            )
-
-            langfuse_generation = langfuse_span.start_generation(
-                name="ollama-generation",
-                input=messages,
-                model=model,
-                metadata=log_extra,
-                version=version,
-                model_parameters=model_params
-            )
-
-            response = ollama.chat(
-                model=model,
-                messages=messages,
-            )
-
-            input_tokens = response.get('prompt_eval_count', 0)
-            output_tokens = response.get('eval_count', 0)
-            response_text = response['message']['content']
-
-            langfuse_generation.update(
-                output=response_text,
-                usage_details={"prompt_tokens": input_tokens, "completion_tokens": output_tokens}
-            )
-            langfuse_generation.end()
-            
-            langfuse_span.update(output={"result": response_text})
-            langfuse_span.end()
-            
-            self.langfuse.flush()
-
-            llm_logger.info(
-                "LLM call successful",
-                extra={
-                    **log_extra,
-                    "provider": "ollama",
-                    "model_used": model,
-                    "input_tokens": input_tokens,
-                    "output_tokens": output_tokens,
-                    "outcome": "success",
-                    "input_text": user_prompt,
-                    "output_text": response_text,
-                },
-            )
-            return response_text
-        except Exception as e:
-            llm_logger.error(
-                "LLM call failed",
-                extra={
-                    **log_extra,
-                    "provider": "ollama",
-                    "model_used": model,
-                    "outcome": "error",
-                    "error_message": str(e),
-                },
-            )
-            raise e
-
+        messages = self._build_messages(user_prompt, roles)
+        def call_fn(msgs):
+            r = ollama.chat(model=model, messages=msgs)
+            msg = r.get('message') or {}
+            return msg.get('content', ''), r.get('prompt_eval_count', 0), r.get('eval_count', 0)
+        return self._traced_call("ollama", model, user_prompt, messages, log_extra, llm_logger, call_fn)
 
 
 class EDAVOpenAIProvider(LLMProvider):
@@ -119,78 +130,11 @@ class EDAVOpenAIProvider(LLMProvider):
             raise RuntimeError(f"Error acquiring token for scope {scope}: {e}") from e
 
     def get_llm_response(self, user_prompt, model, roles, llm_logger, log_extra):
-        try:
-            messages = []
-            for role, content in roles.items():
-                if content:
-                    messages.append({'role': role, 'content': content})
-            messages.append({'role': 'user', 'content': user_prompt})
-
-            version = log_extra.get("prompt_version")
-            model_params = log_extra.get("model_params")
-
-            langfuse_span = self.langfuse.start_span(
-                name=log_extra.get("use_case", "edav-openai-trace"),
-                input={"user_input": user_prompt},
-                metadata=log_extra,
-                version=version
-            )
-
-            langfuse_generation = langfuse_span.start_generation(
-                name="edav-openai-generation",
-                input=messages,
-                model=model,
-                metadata=log_extra,
-                version=version,
-                model_parameters=model_params
-            )
-
-            response = self.client.chat.completions.create(
-                model=model,
-                messages=messages,
-            )
-
-            input_tokens = response.usage.prompt_tokens
-            output_tokens = response.usage.completion_tokens
-            response_text = response.choices[0].message.content
-
-            langfuse_generation.update(
-                output=response_text,
-                usage_details={"prompt_tokens": input_tokens, "completion_tokens": output_tokens}
-            )
-            langfuse_generation.end()
-
-            langfuse_span.update(output={"result": response_text})
-            langfuse_span.end()
-            
-            self.langfuse.flush()
-
-            llm_logger.info(
-                "LLM call successful",
-                extra={
-                    **log_extra,
-                    "provider": "edav_openai",
-                    "model_used": model,
-                    "input_tokens": input_tokens,
-                    "output_tokens": output_tokens,
-                    "outcome": "success",
-                    "input_text": user_prompt,
-                    "output_text": response_text,
-                },
-            )
-            return response_text
-        except Exception as e:
-            llm_logger.error(
-                "LLM call failed",
-                extra={
-                    **log_extra,
-                    "provider": "edav_openai",
-                    "model_used": model,
-                    "outcome": "error",
-                    "error_message": str(e),
-                },
-            )
-            raise e
+        messages = self._build_messages(user_prompt, roles)
+        def call_fn(msgs):
+            r = self.client.chat.completions.create(model=model, messages=msgs)
+            return r.choices[0].message.content, r.usage.prompt_tokens, r.usage.completion_tokens
+        return self._traced_call("edav_openai", model, user_prompt, messages, log_extra, llm_logger, call_fn)
 
 
 class AzureOpenAIProvider(LLMProvider):
@@ -203,78 +147,11 @@ class AzureOpenAIProvider(LLMProvider):
         )
 
     def get_llm_response(self, user_prompt, model, roles, llm_logger, log_extra):
-        try:
-            messages = []
-            for role, content in roles.items():
-                if content:
-                    messages.append({'role': role, 'content': content})
-            messages.append({'role': 'user', 'content': user_prompt})
-
-            version = log_extra.get("prompt_version")
-            model_params = log_extra.get("model_params")
-
-            langfuse_span = self.langfuse.start_span(
-                name=log_extra.get("use_case", "azure-openai-trace"),
-                input={"user_input": user_prompt},
-                metadata=log_extra,
-                version=version
-            )
-
-            langfuse_generation = langfuse_span.start_generation(
-                name="azure-openai-generation",
-                input=messages,
-                model=model,
-                metadata=log_extra,
-                version=version,
-                model_parameters=model_params
-            )
-
-            response = self.client.chat.completions.create(
-                model=model,
-                messages=messages,
-            )
-
-            input_tokens = response.usage.prompt_tokens
-            output_tokens = response.usage.completion_tokens
-            response_text = response.choices[0].message.content
-
-            langfuse_generation.update(
-                output=response_text,
-                usage_details={"prompt_tokens": input_tokens, "completion_tokens": output_tokens}
-            )
-            langfuse_generation.end()
-
-            langfuse_span.update(output={"result": response_text})
-            langfuse_span.end()
-            
-            self.langfuse.flush()
-
-            llm_logger.info(
-                "LLM call successful",
-                extra={
-                    **log_extra,
-                    "provider": "azure_openai",
-                    "model_used": model,
-                    "input_tokens": input_tokens,
-                    "output_tokens": output_tokens,
-                    "outcome": "success",
-                    "input_text": user_prompt,
-                    "output_text": response_text,
-                },
-            )
-            return response_text
-        except Exception as e:
-            llm_logger.error(
-                "LLM call failed",
-                extra={
-                    **log_extra,
-                    "provider": "azure_openai",
-                    "model_used": model,
-                    "outcome": "error",
-                    "error_message": str(e),
-                },
-            )
-            raise e
+        messages = self._build_messages(user_prompt, roles)
+        def call_fn(msgs):
+            r = self.client.chat.completions.create(model=model, messages=msgs)
+            return r.choices[0].message.content, r.usage.prompt_tokens, r.usage.completion_tokens
+        return self._traced_call("azure_openai", model, user_prompt, messages, log_extra, llm_logger, call_fn)
 
 
 class OpenAICompatibleProvider(LLMProvider):
@@ -287,78 +164,13 @@ class OpenAICompatibleProvider(LLMProvider):
         )
 
     def get_llm_response(self, user_prompt, model, roles, llm_logger, log_extra):
-        try:
-            messages = []
-            for role, content in roles.items():
-                if content:
-                    messages.append({'role': role, 'content': content})
-            messages.append({'role': 'user', 'content': user_prompt})
-
-            version = log_extra.get("prompt_version")
-            model_params = log_extra.get("model_params")
-
-            langfuse_span = self.langfuse.start_span(
-                name=log_extra.get("use_case", "openai-compatible-trace"),
-                input={"user_input": user_prompt},
-                metadata=log_extra,
-                version=version
-            )
-
-            langfuse_generation = langfuse_span.start_generation(
-                name="openai-compatible-generation",
-                input=messages,
-                model=model,
-                metadata=log_extra,
-                version=version,
-                model_parameters=model_params
-            )
-
-            response = self.client.chat.completions.create(
-                model=model,
-                messages=messages,
-            )
-
-            input_tokens = response.usage.prompt_tokens if response.usage else 0
-            output_tokens = response.usage.completion_tokens if response.usage else 0
-            response_text = response.choices[0].message.content
-
-            langfuse_generation.update(
-                output=response_text,
-                usage_details={"prompt_tokens": input_tokens, "completion_tokens": output_tokens}
-            )
-            langfuse_generation.end()
-
-            langfuse_span.update(output={"result": response_text})
-            langfuse_span.end()
-
-            self.langfuse.flush()
-
-            llm_logger.info(
-                "LLM call successful",
-                extra={
-                    **log_extra,
-                    "provider": "openai_compatible",
-                    "model_used": model,
-                    "input_tokens": input_tokens,
-                    "output_tokens": output_tokens,
-                    "outcome": "success",
-                    "input_text": user_prompt,
-                    "output_text": response_text,
-                },
-            )
-            return response_text
-        except Exception as e:
-            llm_logger.error(
-                "LLM call failed",
-                extra={
-                    **log_extra,
-                    "provider": "openai_compatible",
-                    "model_used": model,
-                    "outcome": "error",
-                    "error_message": str(e),
-                },
-            )
-            raise e
+        messages = self._build_messages(user_prompt, roles)
+        def call_fn(msgs):
+            r = self.client.chat.completions.create(model=model, messages=msgs)
+            input_tokens = r.usage.prompt_tokens if r.usage else 0
+            output_tokens = r.usage.completion_tokens if r.usage else 0
+            return r.choices[0].message.content, input_tokens, output_tokens
+        return self._traced_call("openai_compatible", model, user_prompt, messages, log_extra, llm_logger, call_fn)
 
 
 class LLMProviderFactory:

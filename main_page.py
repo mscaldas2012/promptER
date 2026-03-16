@@ -4,6 +4,12 @@ import json
 from llm_factory import LLMProviderFactory
 from logging_config import llm_logger
 from prompt_loader import load_prompt_config
+from utils import extract_thinking
+
+
+@st.dialog("💭 Model Thinking", width="large")
+def _show_thinking_dialog(content: str) -> None:
+    st.markdown(content)
 
 PROMPT_USE_CASE = "meta-prompt-generator"
 PROMPT_MODEL_NAME = "default"
@@ -108,6 +114,8 @@ def main_page():
 
     if 'llm_response' not in st.session_state:
         st.session_state.llm_response = None
+    if 'llm_thinking' not in st.session_state:
+        st.session_state.llm_thinking = None
 
     if st.button("Refine Prompt"):
         if not st.session_state.refiner_user_prompt:
@@ -148,9 +156,13 @@ def main_page():
                         llm_logger,
                         log_extra
                     )
-                    
+
+                    # Strip <think>...</think> blocks before parsing; preserve thinking for optional display
+                    clean_str, thinking = extract_thinking(llm_response_str)
+                    st.session_state.llm_thinking = thinking
+
                     import re
-                    json_match = re.search(r'\{.*\}', llm_response_str, re.DOTALL)
+                    json_match = re.search(r'\{.*\}', clean_str, re.DOTALL)
 
                     if json_match:
                         json_str = json_match.group()
@@ -159,9 +171,14 @@ def main_page():
                         except json.JSONDecodeError:
                             st.session_state.llm_response = {"error": "The LLM returned a string that looks like JSON, but it is not valid.", "raw_response": json_str}
                     else:
-                        st.session_state.llm_response = {"error": "The LLM did not return a valid JSON.", "raw_response": llm_response_str}
+                        st.session_state.llm_response = {"error": "The LLM did not return a valid JSON.", "raw_response": clean_str}
                 except Exception as e:
+                    st.session_state.llm_thinking = None
                     st.session_state.llm_response = {"error": f"An error occurred: {e}", "raw_response": ""}
+
+    if st.session_state.get("llm_thinking"):
+        if st.button("💭 View Thinking", key="view_thinking_main"):
+            _show_thinking_dialog(st.session_state.llm_thinking)
 
     if st.session_state.llm_response:
         response_json = st.session_state.llm_response

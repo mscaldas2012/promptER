@@ -3,6 +3,7 @@ import streamlit as st
 import json
 from llm_factory import LLMProviderFactory
 from logging_config import llm_logger
+from utils import extract_thinking
 
 def chat_page():
     st.title("Playground")
@@ -46,6 +47,9 @@ def chat_page():
     for message in st.session_state.messages:
         with st.chat_message(message["role"]):
             st.markdown(message["content"])
+            if message.get("thinking"):
+                with st.expander("💭 View Thinking"):
+                    st.markdown(message["thinking"])
 
     # React to user input
     if prompt := st.chat_input("What is up?"):
@@ -75,11 +79,22 @@ def chat_page():
                     log_extra
                 )
 
+                # Strip <think> blocks; keep thinking for optional display
+                clean_response, thinking = extract_thinking(response)
+
                 # Display assistant response in chat message container
                 with st.chat_message("assistant"):
-                    st.markdown(response)
-                # Add assistant response to chat history
-                st.session_state.messages.append({"role": "assistant", "content": response})
+                    st.markdown(clean_response)
+                    if thinking:
+                        with st.expander("💭 View Thinking"):
+                            st.markdown(thinking)
+
+                # Add assistant response to chat history (with thinking for replay)
+                st.session_state.messages.append({
+                    "role": "assistant",
+                    "content": clean_response,
+                    "thinking": thinking,
+                })
 
             except Exception as e:
                 st.error(f"An error occurred: {e}")
